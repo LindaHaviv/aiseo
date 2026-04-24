@@ -61,7 +61,7 @@ class Fetcher:
         for _ in range(_MAX_REDIRECTS):
             resp = await self._client.request(method, url)
             if resp.is_redirect and resp.has_redirect_location:
-                url = str(resp.next_request.url)  # type: ignore[union-attr]
+                url = str(resp.url.join(resp.headers["location"]))
                 self._validate(url)
             else:
                 return resp
