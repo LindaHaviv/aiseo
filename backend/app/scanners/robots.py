@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.fetcher import Fetcher
 from app.models import CheckResult, CheckStatus
 
@@ -17,6 +19,8 @@ AI_BOTS = [
     "Applebot-Extended",
     "cohere-ai",
 ]
+
+_BLANKET_DISALLOW = re.compile(r"disallow:\s*/\s*$", re.MULTILINE)
 
 
 async def check_robots_txt(base_url: str, fetcher: Fetcher) -> list[CheckResult]:
@@ -71,14 +75,14 @@ async def check_robots_txt(base_url: str, fetcher: Fetcher) -> list[CheckResult]
         if f"user-agent: {bot.lower()}" in text:
             section_start = text.index(f"user-agent: {bot.lower()}")
             section = text[section_start : section_start + 500]
-            if "disallow: /" in section:
+            if _BLANKET_DISALLOW.search(section):
                 blocked_bots.append(bot)
 
     if "user-agent: *" in text:
         star_idx = text.index("user-agent: *")
         star_section = text[star_idx : star_idx + 500]
-        if "disallow: /" in star_section and "disallow: /\n" not in star_section.replace(" ", ""):
-            pass
+        if _BLANKET_DISALLOW.search(star_section):
+            blocked_bots.extend(bot for bot in AI_BOTS if bot not in blocked_bots)
 
     if blocked_bots:
         results.append(

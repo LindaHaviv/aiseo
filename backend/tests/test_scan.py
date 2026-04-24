@@ -138,6 +138,62 @@ async def test_scan_blocked_bots(client: AsyncClient):
     assert "robots_ai_bots" in bot_fix_ids
 
 
+@respx.mock
+@pytest.mark.asyncio
+async def test_scan_path_specific_disallow_not_flagged(client: AsyncClient):
+    """Path-specific Disallow should not flag a bot as blocked."""
+    robots = "User-agent: GPTBot\nDisallow: /admin\nAllow: /\n"
+    respx.get("https://partial.com/").mock(
+        return_value=Response(
+            200,
+            text=(
+                "<html><head><title>Partial</title></head>"
+                "<body><main><h1>Hi</h1><p>Content</p>"
+                "</main></body></html>"
+            ),
+            headers={"content-type": "text/html"},
+        )
+    )
+    respx.get("https://partial.com/robots.txt").mock(return_value=Response(200, text=robots))
+    respx.get("https://partial.com/sitemap.xml").mock(return_value=Response(404))
+    respx.get("https://partial.com/sitemap_index.xml").mock(return_value=Response(404))
+    respx.get("https://partial.com/llms.txt").mock(return_value=Response(404))
+    respx.get("https://partial.com/llms-full.txt").mock(return_value=Response(404))
+
+    resp = await client.post("/api/scan", json={"url": "https://partial.com"})
+    data = resp.json()
+    bot_fix_ids = [f["check_id"] for f in data["fixes"]]
+    assert "robots_ai_bots" not in bot_fix_ids
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_scan_wildcard_blanket_disallow(client: AsyncClient):
+    """User-agent: * with Disallow: / should flag all AI bots."""
+    robots = "User-agent: *\nDisallow: /\n"
+    respx.get("https://allblocked.com/").mock(
+        return_value=Response(
+            200,
+            text=(
+                "<html><head><title>Blocked</title></head>"
+                "<body><main><h1>Hi</h1><p>Text</p>"
+                "</main></body></html>"
+            ),
+            headers={"content-type": "text/html"},
+        )
+    )
+    respx.get("https://allblocked.com/robots.txt").mock(return_value=Response(200, text=robots))
+    respx.get("https://allblocked.com/sitemap.xml").mock(return_value=Response(404))
+    respx.get("https://allblocked.com/sitemap_index.xml").mock(return_value=Response(404))
+    respx.get("https://allblocked.com/llms.txt").mock(return_value=Response(404))
+    respx.get("https://allblocked.com/llms-full.txt").mock(return_value=Response(404))
+
+    resp = await client.post("/api/scan", json={"url": "https://allblocked.com"})
+    data = resp.json()
+    bot_fix_ids = [f["check_id"] for f in data["fixes"]]
+    assert "robots_ai_bots" in bot_fix_ids
+
+
 @pytest.mark.asyncio
 async def test_scan_invalid_url(client: AsyncClient):
     """Invalid URL should return 422."""
