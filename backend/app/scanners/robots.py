@@ -21,6 +21,14 @@ AI_BOTS = [
 ]
 
 _BLANKET_DISALLOW = re.compile(r"disallow:\s*/\s*$", re.MULTILINE)
+_UA_LINE = re.compile(r"^user-agent:\s*", re.MULTILINE)
+
+
+def _extract_section(text: str, start: int) -> str:
+    """Return the robots.txt section starting at *start*, ending before the next User-agent line."""
+    match = _UA_LINE.search(text, start + 1)
+    end = match.start() if match else len(text)
+    return text[start:end]
 
 
 async def check_robots_txt(base_url: str, fetcher: Fetcher) -> list[CheckResult]:
@@ -71,18 +79,23 @@ async def check_robots_txt(base_url: str, fetcher: Fetcher) -> list[CheckResult]
     )
 
     blocked_bots: list[str] = []
+    bots_with_sections: set[str] = set()
     for bot in AI_BOTS:
-        if f"user-agent: {bot.lower()}" in text:
-            section_start = text.index(f"user-agent: {bot.lower()}")
-            section = text[section_start : section_start + 500]
+        ua_key = f"user-agent: {bot.lower()}"
+        if ua_key in text:
+            bots_with_sections.add(bot)
+            section_start = text.index(ua_key)
+            section = _extract_section(text, section_start)
             if _BLANKET_DISALLOW.search(section):
                 blocked_bots.append(bot)
 
     if "user-agent: *" in text:
         star_idx = text.index("user-agent: *")
-        star_section = text[star_idx : star_idx + 500]
+        star_section = _extract_section(text, star_idx)
         if _BLANKET_DISALLOW.search(star_section):
-            blocked_bots.extend(bot for bot in AI_BOTS if bot not in blocked_bots)
+            blocked_bots.extend(
+                bot for bot in AI_BOTS if bot not in blocked_bots and bot not in bots_with_sections
+            )
 
     if blocked_bots:
         results.append(

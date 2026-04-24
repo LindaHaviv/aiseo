@@ -194,6 +194,58 @@ async def test_scan_wildcard_blanket_disallow(client: AsyncClient):
     assert "robots_ai_bots" in bot_fix_ids
 
 
+@respx.mock
+@pytest.mark.asyncio
+async def test_adjacent_section_no_bleed(client: AsyncClient):
+    """Disallow in an adjacent bot section must not bleed into GPTBot."""
+    robots = "User-agent: GPTBot\nAllow: /\n\nUser-agent: BadBot\nDisallow: /\n"
+    html = (
+        "<html><head><title>Adjacent</title></head>"
+        "<body><main><h1>Hi</h1><p>Text</p></main></body></html>"
+    )
+    respx.get("https://adj.com/").mock(
+        return_value=Response(200, text=html, headers={"content-type": "text/html"})
+    )
+    respx.get("https://adj.com/robots.txt").mock(return_value=Response(200, text=robots))
+    respx.get("https://adj.com/sitemap.xml").mock(return_value=Response(404))
+    respx.get("https://adj.com/sitemap_index.xml").mock(return_value=Response(404))
+    respx.get("https://adj.com/llms.txt").mock(return_value=Response(404))
+    respx.get("https://adj.com/llms-full.txt").mock(return_value=Response(404))
+
+    resp = await client.post("/api/scan", json={"url": "https://adj.com"})
+    data = resp.json()
+    bot_fix_ids = [f["check_id"] for f in data["fixes"]]
+    assert "robots_ai_bots" not in bot_fix_ids
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_wildcard_block_respects_bot_allow(client: AsyncClient):
+    """Wildcard Disallow: / should not override a bot-specific Allow."""
+    robots = "User-agent: *\nDisallow: /\n\nUser-agent: GPTBot\nAllow: /\n"
+    html = (
+        "<html><head><title>Mixed</title></head>"
+        "<body><main><h1>Hi</h1><p>Text</p></main></body></html>"
+    )
+    respx.get("https://mixed.com/").mock(
+        return_value=Response(200, text=html, headers={"content-type": "text/html"})
+    )
+    respx.get("https://mixed.com/robots.txt").mock(return_value=Response(200, text=robots))
+    respx.get("https://mixed.com/sitemap.xml").mock(return_value=Response(404))
+    respx.get("https://mixed.com/sitemap_index.xml").mock(return_value=Response(404))
+    respx.get("https://mixed.com/llms.txt").mock(return_value=Response(404))
+    respx.get("https://mixed.com/llms-full.txt").mock(return_value=Response(404))
+
+    resp = await client.post("/api/scan", json={"url": "https://mixed.com"})
+    data = resp.json()
+    blocked_msg = ""
+    for cat in data["categories"]:
+        for check in cat["checks"]:
+            if check["id"] == "robots_ai_bots":
+                blocked_msg = check["message"]
+    assert "GPTBot" not in blocked_msg
+
+
 @pytest.mark.asyncio
 async def test_scan_invalid_url(client: AsyncClient):
     """Invalid URL should return 422."""
