@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 _TIMEOUT = httpx.Timeout(15, connect=10)
+_MAX_REDIRECTS = 5
 _HEADERS = {
     "User-Agent": ("Mozilla/5.0 (compatible; AISEOBot/1.0; +https://github.com/LindaHaviv/aiseo)"),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -47,19 +48,29 @@ class Fetcher:
         self._client = httpx.AsyncClient(
             timeout=_TIMEOUT,
             headers=_HEADERS,
-            follow_redirects=True,
-            max_redirects=5,
+            follow_redirects=False,
         )
 
     def _validate(self, url: str) -> None:
         if not _is_safe_url(url):
             raise SSRFError(f"Blocked request to private/reserved address: {url}")
 
+    async def _request(self, method: str, url: str) -> httpx.Response:
+        """Issue a request, manually following redirects with SSRF validation."""
+        self._validate(url)
+        for _ in range(_MAX_REDIRECTS):
+            resp = await self._client.request(method, url)
+            if resp.is_redirect and resp.has_redirect_location:
+                url = str(resp.next_request.url)  # type: ignore[union-attr]
+                self._validate(url)
+            else:
+                return resp
+        return resp
+
     async def get(self, url: str) -> httpx.Response:
         if url in self._cache:
             return self._cache[url]
-        self._validate(url)
-        resp = await self._client.get(url)
+        resp = await self._request("GET", url)
         self._cache[url] = resp
         return resp
 
@@ -67,8 +78,7 @@ class Fetcher:
         key = f"HEAD:{url}"
         if key in self._cache:
             return self._cache[key]
-        self._validate(url)
-        resp = await self._client.head(url)
+        resp = await self._request("HEAD", url)
         self._cache[key] = resp
         return resp
 
