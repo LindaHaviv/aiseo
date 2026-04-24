@@ -20,7 +20,7 @@ AI_BOTS = [
     "cohere-ai",
 ]
 
-_BLANKET_DISALLOW = re.compile(r"disallow:\s*/\s*$", re.MULTILINE)
+_BLANKET_DISALLOW = re.compile(r"^disallow:\s*/\s*$", re.MULTILINE)
 _UA_LINE = re.compile(r"^user-agent:\s*", re.MULTILINE)
 
 

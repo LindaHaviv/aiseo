@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.fetcher import Fetcher
+from app.fetcher import Fetcher, SSRFError
 from app.fixes import generate_fixes
 from app.models import CategoryScore, ScanRequest, ScanResponse, score_to_grade
 from app.scanners.content import check_content
@@ -63,6 +63,11 @@ async def scan(req: ScanRequest) -> ScanResponse:
             try:
                 results = await scanner(base_url, fetcher)
                 all_checks.extend(results)
+            except SSRFError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="URL targets a private or reserved address",
+                )
             except Exception:
                 continue
 
